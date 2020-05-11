@@ -8,7 +8,15 @@ On April 15, 1912, during her maiden voyage, the widely considered “unsinkable
 
 While there was some element of luck involved in surviving, it seems some groups of people were more likely to survive than others.
 
-In this challenge, we ask you to build a predictive model that answers the question: “what sorts of people were more likely to survive?” using passenger data (ie name, age, gender, socio-economic class, etc). 
+In this challenge, we ask you to build a predictive model that answers the question: “what sorts of people were more likely to survive?” using passenger data (ie name, age, gender, socio-economic class, etc).
+
+# Abstract
+
+Use various techniques of Feature Engineering, Classification and Regression algorithms to achieve more accurate predictions.
+
+We will be utilising ensemble learning by applying several algorithms interchangeably.
+
+The best score achived on Kaggle using techniques below is `79.904%`.
 
 # Tools we would need
 
@@ -100,7 +108,7 @@ for index, person in td_merged.iterrows():
     if found:
         td_merged.loc[index, 'Title'] = found.group(1)
 
-td_filtered = td_merged.drop(['PassengerId','Name'],axis=1)
+td_filtered = td_merged.drop(['PassengerId','Name',],axis=1)
 ```
 
 ### Fill missing `Embarked` values
@@ -131,6 +139,180 @@ td_filtered[['Fare']] = td_filtered[['Fare']].fillna(missing_fare)
 td_filtered.Cabin = td_filtered.Cabin[td_filtered.Cabin.notnull()].apply(lambda c: c[0])
 ```
 
+### Restore age by title
+
+It a known fact that title `Master` belongs to boys.
+
+>The abbreviation Mr. has been in use since the fifteenth century, it is a variant of the word master. Master is still occasionally used as a title for a boy, there is no abbreviation.
+
+At this point we are going to assign an average kid age to those kids with absent `Age`.
+
+
+```python
+pd.options.mode.chained_assignment = None
+masters = td_filtered[(td_filtered.Title == 'Master.')]
+masters_without_age = masters[(masters.Age.isnull())]
+master_mean_age = masters[(masters.Age.notnull())]['Age'].mean()
+masters_without_age['Age'] = master_mean_age
+td_filtered.update(masters_without_age)
+```
+
+
+
+### Aggregate redundant titles
+
+
+#### Related to a royalty or possession of a high rank
+Earl. and Countess. are in the third degree of the U.K. Peerage System known as British nobility (e.g. Prince Edward, Earl of Wessex, of his wife Countess of Wessex).
+
+Jonkheer. of person related to the Dutch Nobility System
+
+Sir./Dame. of person knighted by the Queen.
+
+L.(Lord)/Lady., Don./Dona. - in the U.K., Barons, viscounts, earls, marquesses and their female counterparts can all be referred to as lord or lady instead of their full title, as can their children.
+
+#### Military
+Major., Col., Capt
+
+#### Religion
+Rev. stands for the Reverend, a Christian cleric such as an pastor or priest. 
+
+#### Academic
+Dr. of a person who has obtained a doctorate (e.g. PhD).
+
+#### Unknown marital status
+Mr./Ms.
+
+#### Unmarried woman
+Miss. 
+Mlle. stands for Mademoiselle in French
+
+#### Married woman
+Mrs. is a title of married or widowed woman
+
+Mme. stands for Madame in French
+
+
+```python
+sorted(td_merged.Title.unique())
+
+# Countess., Jonkheer., Sir., Dame., L., Lady., Don., Dona. -> High rank
+# Major., Col., Capt. -> Military
+# Rev. -> Religion
+# Dr. -> Academic
+# Mrs., Mme. -> Married
+# Miss., Mlle. -> Unmarried
+# Master -> Child
+# Mr., Ms. -> Unknown
+
+# of a High rank
+td_filtered.Title[(td_filtered.Title.isin(['Countess.', 'Jonkheer.', 'Sir.', 'Dame.', 'L.', 'Lady.', 'Don.', 'Dona.']))] = 'High rank'
+# Married
+td_filtered.Title[(td_filtered.Title.isin(['Mrs.','Mme.']))] = 'Married'
+# Unmarried
+td_filtered.Title[(td_filtered.Title.isin(['Miss.','Mlle.']))] = 'Unmarried'
+# Academic
+td_filtered.Title[(td_filtered.Title.isin(['Dr.']))] = 'Academic'
+# Unknown
+td_filtered.Title[(td_filtered.Title.isin(['Mr.','Ms.']))] = 'Undefined'
+# Child
+td_filtered.Title[(td_filtered.Title.isin(['Master.']))] = 'Child'
+# Religion
+td_filtered.Title[(td_filtered.Title.isin(['Rev.']))] = 'Religion'
+# Military
+td_filtered.Title[(td_filtered.Title.isin(['Major.', 'Col.', 'Capt.']))] = 'Married'
+
+td_filtered.groupby('Title').size()
+```
+
+
+
+
+    Title
+    Academic       8
+    Child         61
+    High rank      7
+    Married      204
+    Religion       8
+    Undefined    759
+    Unmarried    262
+    dtype: int64
+
+
+
+### Setting family category
+
+
+```python
+td_family_size = td_filtered.copy()
+td_family_size['FamilySize'] = (td_filtered.SibSp + td_filtered.Parch + 1)
+td_filtered['FamilyCategory'] = pd.cut(td_family_size.FamilySize,[0,1,2,3,4],labels=['Single','Small','Medium','Large'],duplicates='drop')
+td_filtered.groupby(['FamilyCategory','Pclass']).size().unstack()
+```
+
+
+
+
+<div>
+<style scoped>
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+  <thead>
+    <tr style="text-align: right;">
+      <th>Pclass</th>
+      <th>1.0</th>
+      <th>2.0</th>
+      <th>3.0</th>
+    </tr>
+    <tr>
+      <th>FamilyCategory</th>
+      <th></th>
+      <th></th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <th>Single</th>
+      <td>160</td>
+      <td>158</td>
+      <td>472</td>
+    </tr>
+    <tr>
+      <th>Small</th>
+      <td>104</td>
+      <td>52</td>
+      <td>79</td>
+    </tr>
+    <tr>
+      <th>Medium</th>
+      <td>39</td>
+      <td>45</td>
+      <td>75</td>
+    </tr>
+    <tr>
+      <th>Large</th>
+      <td>9</td>
+      <td>20</td>
+      <td>14</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+
+
 ## Categorical feature encoding
 * `Sex` - we have discovered only 2 possible genders in the data: _male_ and _female_
 * `Ticket` - some tickets are reoccurring, perhaps shared among passengers tagging along in group (family members, tourists, friends, etc.)
@@ -142,7 +324,7 @@ Apart from `Name`, we are also dropping `PassengerId` to avoid our models alloca
 
 
 ```python
-categorical_features = ['Sex','Cabin','Embarked', 'Ticket', 'Title']
+categorical_features = ['Sex','Cabin','Embarked', 'Title','FamilyCategory','Ticket']
 encoders = dict()
 for feature in categorical_features:
     enc = LabelEncoder()
@@ -167,7 +349,7 @@ td_filtered.corr()
 ```
 
 
-![png](output_18_0.png)
+![png](output_24_0.png)
 
 
 
@@ -202,13 +384,14 @@ td_filtered.corr()
       <th>Cabin</th>
       <th>Embarked</th>
       <th>Title</th>
+      <th>FamilyCategory</th>
     </tr>
   </thead>
   <tbody>
     <tr>
       <th>Survived</th>
       <td>1.00</td>
-      <td>-0.34</td>
+      <td>-3.38e-01</td>
       <td>-0.54</td>
       <td>-0.08</td>
       <td>-3.53e-02</td>
@@ -216,13 +399,14 @@ td_filtered.corr()
       <td>-0.17</td>
       <td>0.26</td>
       <td>-3.01e-01</td>
-      <td>-0.17</td>
-      <td>-0.20</td>
+      <td>-1.68e-01</td>
+      <td>-0.14</td>
+      <td>-1.12e-01</td>
     </tr>
     <tr>
       <th>Pclass</th>
       <td>-0.34</td>
-      <td>1.00</td>
+      <td>1.00e+00</td>
       <td>0.12</td>
       <td>-0.41</td>
       <td>6.08e-02</td>
@@ -230,69 +414,74 @@ td_filtered.corr()
       <td>0.31</td>
       <td>-0.56</td>
       <td>7.35e-01</td>
-      <td>0.19</td>
-      <td>0.02</td>
+      <td>1.85e-01</td>
+      <td>0.11</td>
+      <td>-4.59e-04</td>
     </tr>
     <tr>
       <th>Sex</th>
       <td>-0.54</td>
-      <td>0.12</td>
+      <td>1.25e-01</td>
       <td>1.00</td>
-      <td>0.06</td>
+      <td>0.05</td>
       <td>-1.10e-01</td>
       <td>-0.21</td>
       <td>0.02</td>
       <td>-0.19</td>
       <td>1.25e-01</td>
-      <td>0.10</td>
-      <td>0.22</td>
+      <td>9.80e-02</td>
+      <td>-0.02</td>
+      <td>-2.57e-02</td>
     </tr>
     <tr>
       <th>Age</th>
       <td>-0.08</td>
-      <td>-0.41</td>
-      <td>0.06</td>
+      <td>-4.14e-01</td>
+      <td>0.05</td>
       <td>1.00</td>
-      <td>-2.44e-01</td>
-      <td>-0.15</td>
+      <td>-2.53e-01</td>
+      <td>-0.16</td>
       <td>-0.09</td>
       <td>0.18</td>
-      <td>-3.12e-01</td>
-      <td>-0.08</td>
-      <td>0.27</td>
+      <td>-3.16e-01</td>
+      <td>-7.02e-02</td>
+      <td>0.03</td>
+      <td>4.85e-02</td>
     </tr>
     <tr>
       <th>SibSp</th>
       <td>-0.04</td>
-      <td>0.06</td>
+      <td>6.08e-02</td>
       <td>-0.11</td>
-      <td>-0.24</td>
+      <td>-0.25</td>
       <td>1.00e+00</td>
       <td>0.37</td>
       <td>0.06</td>
       <td>0.16</td>
       <td>7.95e-03</td>
-      <td>0.07</td>
-      <td>-0.18</td>
+      <td>6.56e-02</td>
+      <td>-0.23</td>
+      <td>3.55e-01</td>
     </tr>
     <tr>
       <th>Parch</th>
       <td>0.08</td>
-      <td>0.02</td>
+      <td>1.83e-02</td>
       <td>-0.21</td>
-      <td>-0.15</td>
+      <td>-0.16</td>
       <td>3.74e-01</td>
       <td>1.00</td>
       <td>0.05</td>
       <td>0.22</td>
       <td>-3.44e-02</td>
-      <td>0.04</td>
-      <td>-0.09</td>
+      <td>4.48e-02</td>
+      <td>-0.25</td>
+      <td>8.28e-02</td>
     </tr>
     <tr>
       <th>Ticket</th>
       <td>-0.17</td>
-      <td>0.31</td>
+      <td>3.10e-01</td>
       <td>0.02</td>
       <td>-0.09</td>
       <td>6.39e-02</td>
@@ -300,13 +489,14 @@ td_filtered.corr()
       <td>1.00</td>
       <td>-0.01</td>
       <td>2.33e-01</td>
-      <td>0.03</td>
-      <td>-0.01</td>
+      <td>3.15e-02</td>
+      <td>0.05</td>
+      <td>6.11e-02</td>
     </tr>
     <tr>
       <th>Fare</th>
       <td>0.26</td>
-      <td>-0.56</td>
+      <td>-5.59e-01</td>
       <td>-0.19</td>
       <td>0.18</td>
       <td>1.60e-01</td>
@@ -314,50 +504,69 @@ td_filtered.corr()
       <td>-0.01</td>
       <td>1.00</td>
       <td>-5.47e-01</td>
-      <td>-0.24</td>
+      <td>-2.38e-01</td>
       <td>-0.08</td>
+      <td>1.26e-01</td>
     </tr>
     <tr>
       <th>Cabin</th>
       <td>-0.30</td>
-      <td>0.73</td>
+      <td>7.35e-01</td>
       <td>0.13</td>
-      <td>-0.31</td>
+      <td>-0.32</td>
       <td>7.95e-03</td>
       <td>-0.03</td>
       <td>0.23</td>
       <td>-0.55</td>
       <td>1.00e+00</td>
-      <td>0.23</td>
-      <td>0.05</td>
+      <td>2.31e-01</td>
+      <td>0.10</td>
+      <td>-4.70e-02</td>
     </tr>
     <tr>
       <th>Embarked</th>
       <td>-0.17</td>
-      <td>0.19</td>
+      <td>1.85e-01</td>
       <td>0.10</td>
-      <td>-0.08</td>
+      <td>-0.07</td>
       <td>6.56e-02</td>
       <td>0.04</td>
       <td>0.03</td>
       <td>-0.24</td>
       <td>2.31e-01</td>
-      <td>1.00</td>
-      <td>0.06</td>
+      <td>1.00e+00</td>
+      <td>0.02</td>
+      <td>-3.44e-03</td>
     </tr>
     <tr>
       <th>Title</th>
-      <td>-0.20</td>
-      <td>0.02</td>
-      <td>0.22</td>
-      <td>0.27</td>
-      <td>-1.76e-01</td>
-      <td>-0.09</td>
-      <td>-0.01</td>
+      <td>-0.14</td>
+      <td>1.08e-01</td>
+      <td>-0.02</td>
+      <td>0.03</td>
+      <td>-2.26e-01</td>
+      <td>-0.25</td>
+      <td>0.05</td>
       <td>-0.08</td>
-      <td>4.63e-02</td>
-      <td>0.06</td>
+      <td>1.01e-01</td>
+      <td>2.23e-02</td>
       <td>1.00</td>
+      <td>-4.79e-02</td>
+    </tr>
+    <tr>
+      <th>FamilyCategory</th>
+      <td>-0.11</td>
+      <td>-4.59e-04</td>
+      <td>-0.03</td>
+      <td>0.05</td>
+      <td>3.55e-01</td>
+      <td>0.08</td>
+      <td>0.06</td>
+      <td>0.13</td>
+      <td>-4.70e-02</td>
+      <td>-3.44e-03</td>
+      <td>-0.05</td>
+      <td>1.00e+00</td>
     </tr>
   </tbody>
 </table>
@@ -371,19 +580,12 @@ From age and gender insights we can observe that passengers of the First class g
 
 
 ```python
-sns.catplot(x='Sex', y='Age', hue='Survived', data=td_filtered, kind="box", col='Pclass',
+ax = sns.catplot(x='Sex', y='Age', hue='Survived', data=td_filtered, kind="box", col='Pclass',
                palette=['lightpink','lightgreen'])
 ```
 
 
-
-
-    <seaborn.axisgrid.FacetGrid at 0x7f5924745b00>
-
-
-
-
-![png](output_21_1.png)
+![png](output_27_0.png)
 
 
 ## Feature recovery
@@ -442,25 +644,38 @@ feature_importance['Score'] = modelLGB.feature_importance()
 feature_importance['Feature'] = modelLGB.feature_name()
 feature_importance = feature_importance.sort_values(by='Score',ascending=False)
 
+temp = pd.DataFrame()
+temp['Actual'] = y_test
+temp['Predicted'] = predictions
+
+ax = sns.regplot(x='Actual',y='Predicted',data=temp)
+```
+
+    R2 Score (best is 1.0): 0.413632253065786
+    MedAE (the smaller the better): 7.7251463048737605
+    Max Error: 19.660476886331566
+    ExpVar score (best is 1.0): 0.5105419740928383
+    RMSE: 9.420133527623808
+
+
+
+![png](output_32_1.png)
+
+
+
+```python
 ax = sns.barplot(x='Score',y='Feature',data=feature_importance, palette="Purples_d", orient='h')
 ```
 
-    R2 Score (best is 1.0): 0.410205426474857
-    MedAE (the smaller the better): 7.275197240862298
-    Max Error: 33.729644507969894
-    ExpVar score (best is 1.0): 0.41303551808169436
-    RMSE: 11.593578558801603
 
-
-
-![png](output_26_1.png)
+![png](output_33_0.png)
 
 
 #### Gradient boosting with XGBoost
 
 
 ```python
-modelXGB = XGBRegressor(n_estimators=10000)
+modelXGB = XGBRegressor(n_estimators=100)
 modelXGB.fit(X_train, y_train, early_stopping_rounds=10, 
              eval_set=[(X_test, y_test)], verbose=False)
 predictions = modelXGB.predict(X_test)
@@ -480,20 +695,22 @@ plot_importance(modelXGB)
 plt.show()
 ```
 
-    R2 Score (best is 1.0): 0.3521010399536765
-    MedAE (the smaller the better): 6.317258834838867
-    Max Error: 36.57940483093262
-    ExpVar score (best is 1.0): 0.3582935130372745
-    RMSE: 12.15124463439559
+    R2 Score (best is 1.0): 0.5605619120471698
+    MedAE (the smaller the better): 5.6801910400390625
+    Max Error: 19.14730453491211
+    ExpVar score (best is 1.0): 0.5630424569042021
+    RMSE: 8.154941876776922
 
 
 
-![png](output_28_1.png)
+![png](output_35_1.png)
 
 
 
-![png](output_28_2.png)
+![png](output_35_2.png)
 
+
+Looks like **XGBoost** does a better job at regression. 
 
 We will go with the results produced by **XGBoost** in this case as the predictions indicates slightly lower error rates comparing to **LightGBM**
 
@@ -510,22 +727,23 @@ td_filtered.info()
 
     <class 'pandas.core.frame.DataFrame'>
     RangeIndex: 1309 entries, 0 to 1308
-    Data columns (total 11 columns):
-     #   Column    Non-Null Count  Dtype  
-    ---  ------    --------------  -----  
-     0   Survived  891 non-null    float64
-     1   Pclass    1309 non-null   int64  
-     2   Sex       1309 non-null   int64  
-     3   Age       1309 non-null   float64
-     4   SibSp     1309 non-null   int64  
-     5   Parch     1309 non-null   int64  
-     6   Ticket    1309 non-null   int64  
-     7   Fare      1309 non-null   float64
-     8   Cabin     1309 non-null   int64  
-     9   Embarked  1309 non-null   int64  
-     10  Title     1309 non-null   int64  
-    dtypes: float64(3), int64(8)
-    memory usage: 112.6 KB
+    Data columns (total 12 columns):
+     #   Column          Non-Null Count  Dtype  
+    ---  ------          --------------  -----  
+     0   Survived        891 non-null    float64
+     1   Pclass          1309 non-null   float64
+     2   Sex             1309 non-null   int64  
+     3   Age             1309 non-null   float64
+     4   SibSp           1309 non-null   float64
+     5   Parch           1309 non-null   float64
+     6   Ticket          1309 non-null   int64  
+     7   Fare            1309 non-null   float64
+     8   Cabin           1309 non-null   int64  
+     9   Embarked        1309 non-null   int64  
+     10  Title           1309 non-null   int64  
+     11  FamilyCategory  1309 non-null   int64  
+    dtypes: float64(6), int64(6)
+    memory usage: 122.8 KB
 
 
 ### Classification of missing `Cabin` (sector of the ship) values
@@ -533,7 +751,7 @@ td_filtered.info()
 
 ```python
 td_with_cabin = td_filtered[(td_filtered.Cabin.notna())].drop(['Survived'], axis=1)
-td_without_cabin = td_filtered[(td_filtered.Cabin.isna())].drop(['Cabin', 'Survived'], axis=1)
+td_without_cabin = td_filtered[(td_filtered.Cabin.isna())].drop(['Cabin','Survived'], axis=1)
 
 X = td_with_cabin.drop(['Cabin'], axis=1)
 
@@ -552,8 +770,8 @@ X_train, X_test, y_train, y_test = train_test_split(X, Y, test_size=0.05, random
 ```python
 modelNN = Sequential([
     Dense(n_input_features, input_dim=n_input_features, activation='relu'),
-    Dense(n_input_features * 8, activation='relu'),
-    Dense(n_input_features * 8, activation='relu'),
+    Dense(n_input_features * 4, activation='relu'),
+    Dense(n_input_features * 4, activation='relu'),
     Dropout(0.1),
     Dense(n_output_feature, activation='softmax'),
 ])
@@ -578,84 +796,84 @@ print("Loss: %s" % loss)
     _________________________________________________________________
     Layer (type)                 Output Shape              Param #   
     =================================================================
-    dense_1 (Dense)              (None, 9)                 90        
+    dense_1 (Dense)              (None, 10)                110       
     _________________________________________________________________
-    dense_2 (Dense)              (None, 72)                720       
+    dense_2 (Dense)              (None, 40)                440       
     _________________________________________________________________
-    dense_3 (Dense)              (None, 72)                5256      
+    dense_3 (Dense)              (None, 40)                1640      
     _________________________________________________________________
-    dropout_1 (Dropout)          (None, 72)                0         
+    dropout_1 (Dropout)          (None, 40)                0         
     _________________________________________________________________
-    dense_4 (Dense)              (None, 9)                 657       
+    dense_4 (Dense)              (None, 9)                 369       
     =================================================================
-    Total params: 6,723
-    Trainable params: 6,723
+    Total params: 2,559
+    Trainable params: 2,559
     Non-trainable params: 0
     _________________________________________________________________
     Train on 1243 samples, validate on 66 samples
     Epoch 1/30
-    1243/1243 [==============================] - 0s 184us/step - loss: 20.5537 - accuracy: 0.5430 - val_loss: 2.4356 - val_accuracy: 0.7727
+    1243/1243 [==============================] - 0s 176us/step - loss: 15.3115 - accuracy: 0.5237 - val_loss: 2.2682 - val_accuracy: 0.7879
     Epoch 2/30
-    1243/1243 [==============================] - 0s 49us/step - loss: 5.4559 - accuracy: 0.6959 - val_loss: 1.1069 - val_accuracy: 0.8182
+    1243/1243 [==============================] - 0s 46us/step - loss: 4.8624 - accuracy: 0.6613 - val_loss: 0.9225 - val_accuracy: 0.8182
     Epoch 3/30
-    1243/1243 [==============================] - 0s 57us/step - loss: 3.2069 - accuracy: 0.6822 - val_loss: 0.7519 - val_accuracy: 0.8485
+    1243/1243 [==============================] - 0s 50us/step - loss: 3.1765 - accuracy: 0.6251 - val_loss: 0.6677 - val_accuracy: 0.8182
     Epoch 4/30
-    1243/1243 [==============================] - 0s 48us/step - loss: 2.1670 - accuracy: 0.7120 - val_loss: 0.4772 - val_accuracy: 0.8485
+    1243/1243 [==============================] - 0s 48us/step - loss: 2.4985 - accuracy: 0.6734 - val_loss: 0.6739 - val_accuracy: 0.8182
     Epoch 5/30
-    1243/1243 [==============================] - 0s 60us/step - loss: 1.4175 - accuracy: 0.7570 - val_loss: 0.5681 - val_accuracy: 0.8030
+    1243/1243 [==============================] - 0s 71us/step - loss: 1.6571 - accuracy: 0.7112 - val_loss: 0.5252 - val_accuracy: 0.8333
     Epoch 6/30
-    1243/1243 [==============================] - 0s 48us/step - loss: 1.1371 - accuracy: 0.7643 - val_loss: 0.4783 - val_accuracy: 0.8030
+    1243/1243 [==============================] - 0s 72us/step - loss: 1.2223 - accuracy: 0.7353 - val_loss: 0.5227 - val_accuracy: 0.8333
     Epoch 7/30
-    1243/1243 [==============================] - 0s 53us/step - loss: 1.0123 - accuracy: 0.7755 - val_loss: 0.5597 - val_accuracy: 0.8030
+    1243/1243 [==============================] - 0s 78us/step - loss: 0.9672 - accuracy: 0.7667 - val_loss: 0.5950 - val_accuracy: 0.8485
     Epoch 8/30
-    1243/1243 [==============================] - 0s 61us/step - loss: 0.9108 - accuracy: 0.7860 - val_loss: 0.5117 - val_accuracy: 0.8333
+    1243/1243 [==============================] - 0s 44us/step - loss: 0.8947 - accuracy: 0.7892 - val_loss: 0.5801 - val_accuracy: 0.8485
     Epoch 9/30
-    1243/1243 [==============================] - 0s 56us/step - loss: 0.8819 - accuracy: 0.7916 - val_loss: 0.4689 - val_accuracy: 0.8636
+    1243/1243 [==============================] - 0s 52us/step - loss: 0.8623 - accuracy: 0.7924 - val_loss: 0.5259 - val_accuracy: 0.8636
     Epoch 10/30
-    1243/1243 [==============================] - 0s 51us/step - loss: 0.8671 - accuracy: 0.7940 - val_loss: 0.5196 - val_accuracy: 0.8485
+    1243/1243 [==============================] - 0s 57us/step - loss: 0.8661 - accuracy: 0.8085 - val_loss: 0.5609 - val_accuracy: 0.8485
     Epoch 11/30
-    1243/1243 [==============================] - 0s 54us/step - loss: 0.7799 - accuracy: 0.7916 - val_loss: 0.5808 - val_accuracy: 0.8182
+    1243/1243 [==============================] - 0s 50us/step - loss: 0.8340 - accuracy: 0.8069 - val_loss: 0.5419 - val_accuracy: 0.8485
     Epoch 12/30
-    1243/1243 [==============================] - 0s 57us/step - loss: 0.7371 - accuracy: 0.8061 - val_loss: 0.4785 - val_accuracy: 0.8485
+    1243/1243 [==============================] - 0s 49us/step - loss: 0.7949 - accuracy: 0.8053 - val_loss: 0.6117 - val_accuracy: 0.8182
     Epoch 13/30
-    1243/1243 [==============================] - 0s 49us/step - loss: 0.7820 - accuracy: 0.7932 - val_loss: 0.4530 - val_accuracy: 0.8485
+    1243/1243 [==============================] - 0s 53us/step - loss: 0.7937 - accuracy: 0.7973 - val_loss: 0.5681 - val_accuracy: 0.8333
     Epoch 14/30
-    1243/1243 [==============================] - 0s 48us/step - loss: 0.7369 - accuracy: 0.7965 - val_loss: 0.5625 - val_accuracy: 0.8030
+    1243/1243 [==============================] - 0s 53us/step - loss: 0.7776 - accuracy: 0.8069 - val_loss: 0.5813 - val_accuracy: 0.8182
     Epoch 15/30
-    1243/1243 [==============================] - 0s 56us/step - loss: 0.6974 - accuracy: 0.7997 - val_loss: 0.5419 - val_accuracy: 0.8182
+    1243/1243 [==============================] - 0s 62us/step - loss: 0.7690 - accuracy: 0.8061 - val_loss: 0.6481 - val_accuracy: 0.8182
     Epoch 16/30
-    1243/1243 [==============================] - 0s 50us/step - loss: 0.7342 - accuracy: 0.7949 - val_loss: 0.4874 - val_accuracy: 0.8939
+    1243/1243 [==============================] - 0s 46us/step - loss: 0.7738 - accuracy: 0.8053 - val_loss: 0.5151 - val_accuracy: 0.8333
     Epoch 17/30
-    1243/1243 [==============================] - 0s 56us/step - loss: 0.7067 - accuracy: 0.7989 - val_loss: 0.5525 - val_accuracy: 0.8333
+    1243/1243 [==============================] - 0s 51us/step - loss: 0.7101 - accuracy: 0.8117 - val_loss: 0.5577 - val_accuracy: 0.8333
     Epoch 18/30
-    1243/1243 [==============================] - 0s 48us/step - loss: 0.6865 - accuracy: 0.8117 - val_loss: 0.4650 - val_accuracy: 0.8636
+    1243/1243 [==============================] - 0s 51us/step - loss: 0.7303 - accuracy: 0.8109 - val_loss: 0.5786 - val_accuracy: 0.8333
     Epoch 19/30
-    1243/1243 [==============================] - 0s 55us/step - loss: 0.6357 - accuracy: 0.8109 - val_loss: 0.7712 - val_accuracy: 0.8030
+    1243/1243 [==============================] - 0s 48us/step - loss: 0.7356 - accuracy: 0.8053 - val_loss: 0.6230 - val_accuracy: 0.8030
     Epoch 20/30
-    1243/1243 [==============================] - 0s 57us/step - loss: 0.7217 - accuracy: 0.8077 - val_loss: 0.4486 - val_accuracy: 0.8485
+    1243/1243 [==============================] - 0s 52us/step - loss: 0.7096 - accuracy: 0.8069 - val_loss: 0.5526 - val_accuracy: 0.8333
     Epoch 21/30
-    1243/1243 [==============================] - 0s 48us/step - loss: 0.6407 - accuracy: 0.8142 - val_loss: 0.5779 - val_accuracy: 0.8030
+    1243/1243 [==============================] - 0s 42us/step - loss: 0.7062 - accuracy: 0.8134 - val_loss: 0.5744 - val_accuracy: 0.8182
     Epoch 22/30
-    1243/1243 [==============================] - 0s 55us/step - loss: 0.6781 - accuracy: 0.8142 - val_loss: 0.6176 - val_accuracy: 0.7879
+    1243/1243 [==============================] - 0s 52us/step - loss: 0.6736 - accuracy: 0.8117 - val_loss: 0.5431 - val_accuracy: 0.8182
     Epoch 23/30
-    1243/1243 [==============================] - 0s 49us/step - loss: 0.6365 - accuracy: 0.8061 - val_loss: 0.4864 - val_accuracy: 0.8333
+    1243/1243 [==============================] - 0s 50us/step - loss: 0.6741 - accuracy: 0.8077 - val_loss: 0.5908 - val_accuracy: 0.8030
     Epoch 24/30
-    1243/1243 [==============================] - 0s 58us/step - loss: 0.6261 - accuracy: 0.8093 - val_loss: 0.5414 - val_accuracy: 0.8485
+    1243/1243 [==============================] - 0s 41us/step - loss: 0.6802 - accuracy: 0.8109 - val_loss: 0.5689 - val_accuracy: 0.8182
     Epoch 25/30
-    1243/1243 [==============================] - 0s 49us/step - loss: 0.6280 - accuracy: 0.8077 - val_loss: 0.5224 - val_accuracy: 0.8485
+    1243/1243 [==============================] - 0s 50us/step - loss: 0.6778 - accuracy: 0.8029 - val_loss: 0.5114 - val_accuracy: 0.8333
     Epoch 26/30
-    1243/1243 [==============================] - 0s 57us/step - loss: 0.6260 - accuracy: 0.8061 - val_loss: 0.5400 - val_accuracy: 0.8333
+    1243/1243 [==============================] - 0s 41us/step - loss: 0.6865 - accuracy: 0.8077 - val_loss: 0.5872 - val_accuracy: 0.8030
     Epoch 27/30
-    1243/1243 [==============================] - 0s 48us/step - loss: 0.6215 - accuracy: 0.8077 - val_loss: 0.5785 - val_accuracy: 0.8182
+    1243/1243 [==============================] - 0s 56us/step - loss: 0.6604 - accuracy: 0.8117 - val_loss: 0.6628 - val_accuracy: 0.8030
     Epoch 28/30
-    1243/1243 [==============================] - 0s 54us/step - loss: 0.6198 - accuracy: 0.8190 - val_loss: 0.4434 - val_accuracy: 0.8636
+    1243/1243 [==============================] - 0s 48us/step - loss: 0.6612 - accuracy: 0.8085 - val_loss: 0.5356 - val_accuracy: 0.8182
     Epoch 29/30
-    1243/1243 [==============================] - 0s 53us/step - loss: 0.6120 - accuracy: 0.8069 - val_loss: 0.4659 - val_accuracy: 0.8485
+    1243/1243 [==============================] - 0s 60us/step - loss: 0.6276 - accuracy: 0.8174 - val_loss: 0.6542 - val_accuracy: 0.8182
     Epoch 30/30
-    1243/1243 [==============================] - 0s 50us/step - loss: 0.6192 - accuracy: 0.8158 - val_loss: 0.5983 - val_accuracy: 0.8485
-    66/66 [==============================] - 0s 49us/step
-    Accuracy: 0.8484848737716675
-    Loss: 0.5982763862068002
+    1243/1243 [==============================] - 0s 50us/step - loss: 0.6818 - accuracy: 0.8150 - val_loss: 0.8077 - val_accuracy: 0.7576
+    66/66 [==============================] - 0s 50us/step
+    Accuracy: 0.7575757503509521
+    Loss: 0.8077030737291683
 
 
 ##### Model overview
@@ -717,22 +935,23 @@ td_filtered.info()
 
     <class 'pandas.core.frame.DataFrame'>
     RangeIndex: 1309 entries, 0 to 1308
-    Data columns (total 11 columns):
-     #   Column    Non-Null Count  Dtype  
-    ---  ------    --------------  -----  
-     0   Survived  891 non-null    float64
-     1   Pclass    1309 non-null   int64  
-     2   Sex       1309 non-null   int64  
-     3   Age       1309 non-null   float64
-     4   SibSp     1309 non-null   int64  
-     5   Parch     1309 non-null   int64  
-     6   Ticket    1309 non-null   int64  
-     7   Fare      1309 non-null   float64
-     8   Cabin     1309 non-null   int64  
-     9   Embarked  1309 non-null   int64  
-     10  Title     1309 non-null   int64  
-    dtypes: float64(3), int64(8)
-    memory usage: 112.6 KB
+    Data columns (total 12 columns):
+     #   Column          Non-Null Count  Dtype  
+    ---  ------          --------------  -----  
+     0   Survived        891 non-null    float64
+     1   Pclass          1309 non-null   float64
+     2   Sex             1309 non-null   int64  
+     3   Age             1309 non-null   float64
+     4   SibSp           1309 non-null   float64
+     5   Parch           1309 non-null   float64
+     6   Ticket          1309 non-null   int64  
+     7   Fare            1309 non-null   float64
+     8   Cabin           1309 non-null   int64  
+     9   Embarked        1309 non-null   int64  
+     10  Title           1309 non-null   int64  
+     11  FamilyCategory  1309 non-null   int64  
+    dtypes: float64(6), int64(6)
+    memory usage: 122.8 KB
 
 
 Now we have all of our missing values recovered except the only one `Survived`. 
@@ -743,8 +962,8 @@ Let's jump to our final goal -- guess who survived and who did not.
 
 
 ```python
-training_data = td_filtered[(~td_filtered.Survived.isnull())].drop(['Embarked'],axis=1)
-testing_data = td_filtered[(td_filtered.Survived.isnull())].drop(['Embarked','Survived'],axis=1)
+training_data = td_filtered[(~td_filtered.Survived.isnull())].drop(['Fare'],axis=1)
+testing_data = td_filtered[(td_filtered.Survived.isnull())].drop(['Survived','Fare'],axis=1)
 
 X = training_data.drop(['Survived'],axis=1)
 Y = training_data.Survived
@@ -770,61 +989,62 @@ param['metric'] = ['auc', 'binary_logloss']
 lgb_train = lgb.Dataset(X_train, y_train)
 lgb_eval = lgb.Dataset(X_test, y_test, reference=lgb_train)
 
-bst = lgb.train(param, lgb_train, num_boost_round=50, valid_sets=lgb_eval, early_stopping_rounds=10)
+modelLGB = lgb.train(param, lgb_train, num_boost_round=50, valid_sets=lgb_eval, early_stopping_rounds=10)
 ```
 
-    [1]	valid_0's auc: 0.887019	valid_0's binary_logloss: 0.601159
+    [1]	valid_0's auc: 0.850962	valid_0's binary_logloss: 0.603757
     Training until validation scores don't improve for 10 rounds
-    [2]	valid_0's auc: 0.883413	valid_0's binary_logloss: 0.581927
-    [3]	valid_0's auc: 0.883413	valid_0's binary_logloss: 0.564348
-    [4]	valid_0's auc: 0.884615	valid_0's binary_logloss: 0.550044
-    [5]	valid_0's auc: 0.884615	valid_0's binary_logloss: 0.536333
-    [6]	valid_0's auc: 0.885817	valid_0's binary_logloss: 0.52349
-    [7]	valid_0's auc: 0.882212	valid_0's binary_logloss: 0.510005
-    [8]	valid_0's auc: 0.884615	valid_0's binary_logloss: 0.499404
-    [9]	valid_0's auc: 0.887019	valid_0's binary_logloss: 0.48808
-    [10]	valid_0's auc: 0.884615	valid_0's binary_logloss: 0.478776
-    [11]	valid_0's auc: 0.899038	valid_0's binary_logloss: 0.467515
-    [12]	valid_0's auc: 0.908654	valid_0's binary_logloss: 0.456432
-    [13]	valid_0's auc: 0.911058	valid_0's binary_logloss: 0.446728
-    [14]	valid_0's auc: 0.911058	valid_0's binary_logloss: 0.438962
-    [15]	valid_0's auc: 0.911058	valid_0's binary_logloss: 0.431808
-    [16]	valid_0's auc: 0.913462	valid_0's binary_logloss: 0.424851
-    [17]	valid_0's auc: 0.901442	valid_0's binary_logloss: 0.420208
-    [18]	valid_0's auc: 0.901442	valid_0's binary_logloss: 0.416105
-    [19]	valid_0's auc: 0.899038	valid_0's binary_logloss: 0.412113
-    [20]	valid_0's auc: 0.889423	valid_0's binary_logloss: 0.409081
-    [21]	valid_0's auc: 0.889423	valid_0's binary_logloss: 0.40384
-    [22]	valid_0's auc: 0.884615	valid_0's binary_logloss: 0.398509
-    [23]	valid_0's auc: 0.887019	valid_0's binary_logloss: 0.394099
-    [24]	valid_0's auc: 0.887019	valid_0's binary_logloss: 0.39074
-    [25]	valid_0's auc: 0.889423	valid_0's binary_logloss: 0.388734
-    [26]	valid_0's auc: 0.891827	valid_0's binary_logloss: 0.384603
+    [2]	valid_0's auc: 0.824519	valid_0's binary_logloss: 0.587699
+    [3]	valid_0's auc: 0.838942	valid_0's binary_logloss: 0.57104
+    [4]	valid_0's auc: 0.862981	valid_0's binary_logloss: 0.555134
+    [5]	valid_0's auc: 0.867788	valid_0's binary_logloss: 0.541185
+    [6]	valid_0's auc: 0.860577	valid_0's binary_logloss: 0.529578
+    [7]	valid_0's auc: 0.862981	valid_0's binary_logloss: 0.518851
+    [8]	valid_0's auc: 0.867788	valid_0's binary_logloss: 0.508994
+    [9]	valid_0's auc: 0.867788	valid_0's binary_logloss: 0.499373
+    [10]	valid_0's auc: 0.870192	valid_0's binary_logloss: 0.490179
+    [11]	valid_0's auc: 0.875	valid_0's binary_logloss: 0.479415
+    [12]	valid_0's auc: 0.879808	valid_0's binary_logloss: 0.468586
+    [13]	valid_0's auc: 0.882212	valid_0's binary_logloss: 0.459442
+    [14]	valid_0's auc: 0.884615	valid_0's binary_logloss: 0.45015
+    [15]	valid_0's auc: 0.884615	valid_0's binary_logloss: 0.442293
+    [16]	valid_0's auc: 0.887019	valid_0's binary_logloss: 0.43557
+    [17]	valid_0's auc: 0.889423	valid_0's binary_logloss: 0.428966
+    [18]	valid_0's auc: 0.884615	valid_0's binary_logloss: 0.424637
+    [19]	valid_0's auc: 0.884615	valid_0's binary_logloss: 0.420719
+    [20]	valid_0's auc: 0.879808	valid_0's binary_logloss: 0.416658
+    [21]	valid_0's auc: 0.877404	valid_0's binary_logloss: 0.41294
+    [22]	valid_0's auc: 0.877404	valid_0's binary_logloss: 0.409542
+    [23]	valid_0's auc: 0.877404	valid_0's binary_logloss: 0.405429
+    [24]	valid_0's auc: 0.882212	valid_0's binary_logloss: 0.402791
+    [25]	valid_0's auc: 0.884615	valid_0's binary_logloss: 0.399171
+    [26]	valid_0's auc: 0.887019	valid_0's binary_logloss: 0.396409
+    [27]	valid_0's auc: 0.889423	valid_0's binary_logloss: 0.393818
     Early stopping, best iteration is:
-    [16]	valid_0's auc: 0.913462	valid_0's binary_logloss: 0.424851
+    [17]	valid_0's auc: 0.889423	valid_0's binary_logloss: 0.428966
 
 
 ##### Model overview
 
 
 ```python
-print('Accuracy: %s' % bst.best_score['valid_0']['auc'])
-print('Binary logloss: %s' % bst.best_score['valid_0']['binary_logloss'])
+print('Accuracy: %s' % modelLGB.best_score['valid_0']['auc'])
+print('Binary logloss: %s' % modelLGB.best_score['valid_0']['binary_logloss'])
 
 feature_importance = pd.DataFrame()
-feature_importance['Score'] = bst.feature_importance()
-feature_importance['Feature'] = bst.feature_name()
+feature_importance['Score'] = modelLGB.feature_importance()
+feature_importance['Feature'] = modelLGB.feature_name()
 feature_importance = feature_importance.sort_values(by='Score',ascending=False)
 
 ax = sns.barplot(x='Score',y='Feature',data=feature_importance, palette="Purples_d", orient='h')
 ```
 
-    Accuracy: 0.9134615384615384
-    Binary logloss: 0.4248511598054666
+    Accuracy: 0.8894230769230769
+    Binary logloss: 0.42896602264064176
 
 
 
-![png](output_50_1.png)
+![png](output_57_1.png)
 
 
 #### Binary logistic regression with `XGBoost`
@@ -861,8 +1081,8 @@ print('Accuracy: %s' % accuracy_score(y_test, predictions.round()))
 print('MSE: %s' % mean_squared_error(y_test, predictions.round()))
 ```
 
-    Accuracy: 0.8888888888888888
-    MSE: 0.1111111111111111
+    Accuracy: 0.8
+    MSE: 0.2
 
 
 ##### Decision tree
@@ -875,7 +1095,7 @@ xgb.to_graphviz(modelXGB)
 
 
 
-![svg](output_56_0.svg)
+![svg](output_63_0.svg)
 
 
 
@@ -898,7 +1118,7 @@ plt.show()
 ```
 
 
-![png](output_58_0.png)
+![png](output_65_0.png)
 
 
 #### KNN - K Nearest Neighbours with `scikit-learn`
@@ -920,8 +1140,8 @@ print('Accuracy: %s' % accuracy_score(y_test, predictions.round()))
 print('MSE: %s' % mean_squared_error(y_test, predictions.round()))
 ```
 
-    Accuracy: 0.8222222222222222
-    MSE: 0.17777777777777778
+    Accuracy: 0.7333333333333333
+    MSE: 0.26666666666666666
 
 
 #### Neural network with multiple layers (`Keras` & `TF`)
@@ -952,21 +1172,21 @@ modelNN.fit(
 
     Train on 846 samples, validate on 45 samples
     Epoch 1/5
-    846/846 [==============================] - 0s 247us/step - loss: 0.3488 - accuracy: 0.6395 - val_loss: 0.2676 - val_accuracy: 0.7333
+    846/846 [==============================] - 0s 263us/step - loss: 0.2442 - accuracy: 0.6111 - val_loss: 0.2558 - val_accuracy: 0.3111
     Epoch 2/5
-    846/846 [==============================] - 0s 120us/step - loss: 0.3361 - accuracy: 0.6430 - val_loss: 0.2851 - val_accuracy: 0.7111
+    846/846 [==============================] - 0s 133us/step - loss: 0.2378 - accuracy: 0.5827 - val_loss: 0.2177 - val_accuracy: 0.7333
     Epoch 3/5
-    846/846 [==============================] - 0s 115us/step - loss: 0.3224 - accuracy: 0.6667 - val_loss: 0.2672 - val_accuracy: 0.7333
+    846/846 [==============================] - 0s 122us/step - loss: 0.2362 - accuracy: 0.6017 - val_loss: 0.2162 - val_accuracy: 0.7333
     Epoch 4/5
-    846/846 [==============================] - 0s 137us/step - loss: 0.3125 - accuracy: 0.6655 - val_loss: 0.2895 - val_accuracy: 0.6889
+    846/846 [==============================] - 0s 111us/step - loss: 0.2325 - accuracy: 0.6064 - val_loss: 0.2110 - val_accuracy: 0.7111
     Epoch 5/5
-    846/846 [==============================] - 0s 133us/step - loss: 0.3108 - accuracy: 0.6690 - val_loss: 0.2221 - val_accuracy: 0.7778
+    846/846 [==============================] - 0s 108us/step - loss: 0.2325 - accuracy: 0.6158 - val_loss: 0.2182 - val_accuracy: 0.7333
 
 
 
 
 
-    <keras.callbacks.callbacks.History at 0x7f587c501f28>
+    <keras.callbacks.callbacks.History at 0x7f28dc159da0>
 
 
 
@@ -979,9 +1199,9 @@ print("Accuracy: %s" % accuracy)
 print("Loss: %s" % loss)
 ```
 
-    45/45 [==============================] - 0s 72us/step
-    Accuracy: 0.7777777910232544
-    Loss: 0.22205772731039258
+    45/45 [==============================] - 0s 84us/step
+    Accuracy: 0.7333333492279053
+    Loss: 0.2181989785697725
 
 
 #### Convolutional Neural Network with 1x1 dimension (`Keras` & `TF`)
@@ -989,12 +1209,11 @@ print("Loss: %s" % loss)
 
 ```python
 modelCNN = Sequential([
-    Conv1D(filters=32, kernel_size=4, input_shape=(neurons,1)),
-    Conv1D(filters=32, kernel_size=4, activation='relu'),
+    Conv1D(filters=neurons, kernel_size=2, input_shape=(neurons,1)),
     MaxPooling1D(pool_size=2),
     Dropout(0.1),
     Flatten(),
-    Dense(neurons * 4, activation='relu'),
+    Dense(neurons * 2, activation='relu'),
     Dense(1, activation='sigmoid'),
 ])
 
@@ -1009,7 +1228,7 @@ X_test_reshaped = X_test.to_numpy().reshape(X_test.shape[0], X_test.shape[1], 1)
 
 modelCNN.fit(
     X_train_reshaped, y_train,
-    epochs=5, batch_size=10,
+    epochs=5,
     validation_data=(X_test_reshaped, y_test),
     verbose = 1
 )
@@ -1017,21 +1236,21 @@ modelCNN.fit(
 
     Train on 846 samples, validate on 45 samples
     Epoch 1/5
-    846/846 [==============================] - 0s 350us/step - loss: 0.4001 - accuracy: 0.5969 - val_loss: 0.2889 - val_accuracy: 0.7111
+    846/846 [==============================] - 0s 402us/step - loss: 0.3929 - accuracy: 0.5768 - val_loss: 0.2769 - val_accuracy: 0.7111
     Epoch 2/5
-    846/846 [==============================] - 0s 156us/step - loss: 0.3894 - accuracy: 0.6076 - val_loss: 0.3025 - val_accuracy: 0.6889
+    846/846 [==============================] - 0s 80us/step - loss: 0.3886 - accuracy: 0.5875 - val_loss: 0.2626 - val_accuracy: 0.6889
     Epoch 3/5
-    846/846 [==============================] - 0s 153us/step - loss: 0.3306 - accuracy: 0.6501 - val_loss: 0.2845 - val_accuracy: 0.7111
+    846/846 [==============================] - 0s 48us/step - loss: 0.3973 - accuracy: 0.5780 - val_loss: 0.2851 - val_accuracy: 0.7111
     Epoch 4/5
-    846/846 [==============================] - 0s 160us/step - loss: 0.5733 - accuracy: 0.4196 - val_loss: 0.7111 - val_accuracy: 0.2889
+    846/846 [==============================] - 0s 43us/step - loss: 0.3784 - accuracy: 0.5887 - val_loss: 0.2823 - val_accuracy: 0.6889
     Epoch 5/5
-    846/846 [==============================] - 0s 144us/step - loss: 0.5994 - accuracy: 0.3995 - val_loss: 0.7108 - val_accuracy: 0.2889
+    846/846 [==============================] - 0s 42us/step - loss: 0.4029 - accuracy: 0.5686 - val_loss: 0.2663 - val_accuracy: 0.7111
 
 
 
 
 
-    <keras.callbacks.callbacks.History at 0x7f587c249f60>
+    <keras.callbacks.callbacks.History at 0x7f28bcec4fd0>
 
 
 
@@ -1046,9 +1265,9 @@ print("Accuracy: %s" % accuracy)
 print("Loss: %s" % loss)
 ```
 
-    45/45 [==============================] - 0s 83us/step
-    Accuracy: 0.2888889014720917
-    Loss: 0.7108210298750136
+    45/45 [==============================] - 0s 143us/step
+    Accuracy: 0.7111111283302307
+    Loss: 0.26629787915282777
 
 
 ### Feed testing data set
@@ -1090,7 +1309,7 @@ OutputKNN['PassengerId'] = td_merged.PassengerId.astype(int)
 
 ```python
 OutputLGB = testing_data.copy()
-OutputLGB["Survived"] = np.array(bst.predict(testing_data.to_numpy(), num_iteration=bst.best_iteration).round(),dtype=int)
+OutputLGB["Survived"] = np.array(modelLGB.predict(testing_data.to_numpy(), num_iteration=modelLGB.best_iteration).round(),dtype=int)
 OutputLGB['PassengerId'] = td_merged.PassengerId.astype(int)
 ```
 
